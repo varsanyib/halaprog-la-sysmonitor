@@ -57,3 +57,6 @@ class SysMonitor:
         while self.running:
             self.data.append({'timestamp': round(time.time()), 'data': self.collect_data()})
             time.sleep(self.run_interval - 1) # Adjusted for the 1 second sleep in collect_data
+
+    def stop(self):
+        self.running = False
