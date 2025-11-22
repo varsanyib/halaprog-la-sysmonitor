@@ -2,8 +2,9 @@ import psutil
 import time
 
 class SysMonitor:
-    def __init__(self):
+    def __init__(self, run_interval=1):
         self.data = []
+        self.run_interval = run_interval
 
     def collect_data(self):
         cpu_usage = psutil.cpu_percent(interval=1)
@@ -48,7 +49,12 @@ class SysMonitor:
             'network_stats': net_stats
         }
 
+    def run(self):
+        while True:
+            self.data.append({'timestamp': round(time.time()), 'data': self.collect_data()})
+            time.sleep(self.run_interval)
+            print(self.data[-1]['data']['network_stats'][2])  # Utolsó
+
 if __name__ == "__main__":
-    monitor = SysMonitor()
-    data = monitor.collect_data()
-    print(data)
+    monitor = SysMonitor(run_interval=2)
+    monitor.run()
