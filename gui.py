@@ -4,6 +4,7 @@ from tkinter import messagebox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import time
+from anomaly import AnomalyDetector
 
 class SysMonitorGUI:
     def __init__(self, root, monitor):
@@ -18,6 +19,13 @@ class SysMonitorGUI:
         self.mem_history = []
         self.net_upload_history = []
         self.net_download_history = []
+
+        self.anomaly_contamination = 0.005 # 0.5% anomaly rate
+        self.anomaly_relearning_interval = 180 # Relearn every 180 samples
+        self.anomaly_minimum_samples = 60 # Minimum samples to train
+        self.anomaly_detector = AnomalyDetector(contamination=self.anomaly_contamination, min_samples=self.anomaly_minimum_samples)
+        self.anomaly_score = 0.0 # Last anomaly score
+        self.is_anomaly = False
         
         self._configure_root(root)
         
@@ -74,7 +82,6 @@ class SysMonitorGUI:
         
 
     def _create_statistics_section(self, parent):
-        """Létrehozza és elrendezni a statisztikai és hálózati táblázat részt."""
         stats_frame = ttk.Frame(parent)
         
         ttk.Label(stats_frame, text="💻 Általános Rendszer Statisztikák", style="Header.TLabel").grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 10))
@@ -85,6 +92,10 @@ class SysMonitorGUI:
         self._create_general_data_widgets(stats_frame, "CPU:", 1, "cpu")
         self._create_general_data_widgets(stats_frame, "Memória:", 2, "memory")
         self._create_general_data_widgets(stats_frame, "Tárhely:", 3, "partitions")
+
+        self.anomaly_label = ttk.Label(stats_frame, text="Rendszer állapota: Folyamatban 🕓", font=("Segoe UI", 10, "bold"), foreground="gray")
+        self.anomaly_label.grid(row=1, column=1, sticky='e', padx=10, pady=5)
+        stats_frame.grid_columnconfigure(1, weight=1)
 
         ttk.Separator(stats_frame, orient='horizontal').grid(row=4, column=0, columnspan=2, sticky='ew', pady=10)
 
@@ -101,7 +112,6 @@ class SysMonitorGUI:
 
 
     def _create_graphs_section(self, parent):
-        """Létrehozza a Matplotlib grafikonokat befogadó részt."""
         graphs_frame = ttk.Frame(parent, padding="10", relief="sunken")
 
         self.fig, self.axes = self._setup_graphs()
@@ -163,13 +173,23 @@ class SysMonitorGUI:
 
     
     def update_data(self):
-        """A fő frissítési ciklus. Elindítja az almetódusokat és beütemezi a következő frissítést."""
         if not self.monitor.data:
             self.root.after(1000, self.update_data)
             return
 
         latest_entry = self.monitor.data[-1]
         data = latest_entry['data']
+
+        if not self.anomaly_detector.is_trained or (len(self.monitor.data) % self.anomaly_relearning_interval == 0 and len(self.monitor.data) > self.anomaly_detector.min_samples):
+            if self.anomaly_detector.train(self.monitor.data):
+                # print("Isolation Forest betanítva.")
+                pass
+
+        if self.anomaly_detector.is_trained:
+            self.anomaly_score = self.anomaly_detector.predict_anomaly_score(data)
+            
+            self.is_anomaly = self.anomaly_score < 0 
+            self._update_anomaly_label()
             
         cpu_data, mem_data, upload_data, download_data, x_data = self._process_historical_data(data)
         
@@ -210,7 +230,7 @@ class SysMonitorGUI:
         self.general_labels['cpu'].config(text=cpu_text)
             
         # Memory
-        mem_text = f"{data['memory_used_gb']:.2f} GB / {data['memory_total_gb']:.2f} GB ({data['memory_percent']:.1f}%)"
+        mem_text = f"{data['memory_used_gb']:.2f} GB / {data['memory_total_gb']:.2f} GB ({data['memory_used_gb'] / data['memory_total_gb'] * 100:.1f}%)"
         self.general_labels['memory'].config(text=mem_text)
 
         # Storage
@@ -300,21 +320,40 @@ class SysMonitorGUI:
         frame = ttk.Frame(parent, padding=20)
         frame.pack(fill="both", expand=True)
 
-        ttk.Label(frame, text="📌 GUI Beállítások", style="Header.TLabel").grid(row=0, column=0, sticky='w', pady=(0, 10))
+        ttk.Label(frame, text="📌 Beállítások", style="Header.TLabel").grid(row=0, column=0, sticky='w', pady=(0, 10))
 
+        # Grafikon Történeti Időtartam
         ttk.Label(frame, text="Grafikon történeti időtartam (mp):").grid(row=1, column=0, sticky='w', pady=5)
         self.history_len_var = tk.IntVar(value=self.history_len)
         history_entry = ttk.Entry(frame, textvariable=self.history_len_var, width=10)
         history_entry.grid(row=1, column=1, sticky='w', pady=5)
+        
+        ttk.Separator(frame, orient='horizontal').grid(row=2, column=0, columnspan=2, sticky='ew', pady=15)
+        ttk.Label(frame, text="🛠️ Rendszerállapot referenciaértékei", style="Header.TLabel").grid(row=3, column=0, sticky='w', pady=(0, 10))
 
+        ttk.Label(frame, text="Szennyezettség (%):").grid(row=4, column=0, sticky='w', pady=5)
+        self.contam_var = tk.DoubleVar(value=self.anomaly_contamination * 100) # Érték %-ban (pl. 0.5)
+        contam_entry = ttk.Entry(frame, textvariable=self.contam_var, width=10)
+        contam_entry.grid(row=4, column=1, sticky='w', pady=5)
+
+        ttk.Label(frame, text="Újratanítási időköz (mp):").grid(row=5, column=0, sticky='w', pady=5)
+        self.relearn_var = tk.IntVar(value=self.anomaly_relearning_interval)
+        relearn_entry = ttk.Entry(frame, textvariable=self.relearn_var, width=10)
+        relearn_entry.grid(row=5, column=1, sticky='w', pady=5)
+
+        ttk.Label(frame, text="Betanítási időköz (mp): ").grid(row=6, column=0, sticky='w', pady=5)
+        self.min_samples_var = tk.IntVar(value=self.anomaly_minimum_samples)
+        min_samples_entry = ttk.Entry(frame, textvariable=self.min_samples_var, width=10)
+        min_samples_entry.grid(row=6, column=1, sticky='w', pady=5)
+        
         apply_button = ttk.Button(frame, text="Alkalmaz", command=self.apply_settings)
-        apply_button.grid(row=2, column=0, columnspan=2, pady=12)
+        apply_button.grid(row=7, column=0, columnspan=2, pady=15)
 
     def apply_settings(self):
         try:
             new_len = int(self.history_len_var.get())
             if new_len < 1:
-                raise ValueError
+                raise ValueError("history_len")
             
             self.history_len = new_len
             self.cpu_history = self.cpu_history[-new_len:]
@@ -322,7 +361,52 @@ class SysMonitorGUI:
             self.net_upload_history = self.net_upload_history[-new_len:]
             self.net_download_history = self.net_download_history[-new_len:]
 
-            messagebox.showinfo("Siker!", f"A történeti időtartam sikeresen {new_len} másodpercre lett beállítva.")
+            new_contam_percent = float(self.contam_var.get())
+            new_contam = new_contam_percent / 100.0
+            if not (0.0 < new_contam <= 0.5):
+                raise ValueError("contamination")
+            self.anomaly_contamination = new_contam
+            
+            new_relearn = int(self.relearn_var.get())
+            if new_relearn < 1:
+                raise ValueError("relearning")
+            self.anomaly_relearning_interval = new_relearn
+            
+            new_min_samples = int(self.min_samples_var.get())
+            if new_min_samples < 5:
+                raise ValueError("min_samples")
+            self.anomaly_minimum_samples = new_min_samples
+            
+            self.anomaly_detector = AnomalyDetector(
+                contamination=self.anomaly_contamination, 
+                random_state=42, 
+                min_samples=self.anomaly_minimum_samples
+            )
+            
+            # Sikeres Üzenet
+            messagebox.showinfo("Siker!", f"A beállítások sikeresen elmentve!")
 
-        except ValueError:
-            messagebox.showerror("Hiba!", "Kérem, érvényes pozitív egész számot adjon meg a történeti időtartamhoz!")
+        except ValueError as e:
+            error_type = str(e)
+            if "history_len" in error_type:
+                msg = "Kérem, érvényes pozitív egész számot adjon meg a történeti időtartamhoz!"
+            elif "contamination" in error_type:
+                msg = "Kérem, 0 és 50% közötti értéket adjon meg a szennyezettséghez!"
+            elif "relearning" in error_type:
+                msg = "Kérem, érvényes pozitív egész számot adjon meg az újratanítási időközhöz!"
+            elif "min_samples" in error_type:
+                msg = "Kérem, legalább 5 mp értéket adjon meg a betanítási időközhöz!"
+            else:
+                msg = "Érvénytelen bemenet valamelyik mezőben. Kérem, ellenőrizze az értékeket!"
+                
+            messagebox.showerror("Hiba!", msg)
+
+    def _update_anomaly_label(self):
+        if self.is_anomaly:
+            text = f"Rendszer állapota: Detektált anomália ⚠️ ({self.anomaly_score*100:.2f})"
+            color = "red"
+        else:
+            text = f"Rendszer állapota: Normál működés ✅ ({self.anomaly_score*100:.2f})"
+            color = "green"
+
+        self.anomaly_label.config(text=text, foreground=color)
