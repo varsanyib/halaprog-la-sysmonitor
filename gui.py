@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
+from tkinter import messagebox
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import time
@@ -8,10 +9,22 @@ class SysMonitorGUI:
     def __init__(self, root, monitor):
         self.root = root
         self.monitor = monitor
+        self.history_len = 30
+
         root.title("SysMonitor Dashboard")
         root.geometry("1280x720")
+
+        notebook = ttk.Notebook(root)
+        notebook.pack(fill="both", expand=True)
+
+        dashboard_tab = ttk.Frame(notebook)
+        notebook.add(dashboard_tab, text="📊 Monitor")
+
+        settings_tab = ttk.Frame(notebook)
+        notebook.add(settings_tab, text="⚙️ Beállítások")
+
+        self._create_settings_tab(settings_tab)
         
-        self.history_len = 10 # Number of data points to display on the graph
         self.cpu_history = []
         self.mem_history = []
         self.net_upload_history = []
@@ -27,8 +40,8 @@ class SysMonitorGUI:
         style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), background="#EEEEEE")
         style.configure("Treeview", font=("Segoe UI", 9))
         
-        # --- Main container frame ---
-        main_frame = ttk.Frame(root, padding="15", relief="groove")
+        # Main container frame
+        main_frame = ttk.Frame(dashboard_tab, padding="15", relief="groove")
         main_frame.pack(fill='both', expand=True)
 
         # 1. Statistics (Top section)
@@ -49,11 +62,11 @@ class SysMonitorGUI:
         self.tree = self._create_network_treeview(stats_frame, 5)
         
         # Configure stats_frame layout
-        stats_frame.grid_rowconfigure(5, weight=1) # Row 5 is the Treeview
+        stats_frame.grid_rowconfigure(5, weight=1)
         stats_frame.grid_columnconfigure(1, weight=1) 
 
         ttk.Label(stats_frame, text="📊 Grafikonok", style="Header.TLabel").grid(row=6, column=0, columnspan=2, sticky='w', pady=(10, 5))
-        
+
         graphs_frame = ttk.Frame(main_frame, padding="10", relief="sunken")
         graphs_frame.grid(row=1, column=0, sticky='nsew')
         
@@ -214,3 +227,28 @@ class SysMonitorGUI:
 
         # Schedule the next update (1 second interval)
         self.root.after(1000, self.update_data)
+
+    def _create_settings_tab(self, parent):
+        frame = ttk.Frame(parent, padding=20)
+        frame.pack(fill="both", expand=True)
+
+        ttk.Label(frame, text="📌 GUI Beállítások", style="Header.TLabel").grid(row=0, column=0, sticky='w', pady=(0, 10))
+
+        ttk.Label(frame, text="Grafikon történeti időtartam:").grid(row=1, column=0, sticky='w', pady=5)
+        self.history_len_var = tk.IntVar(value=self.history_len)
+        history_entry = ttk.Entry(frame, textvariable=self.history_len_var, width=10)
+        history_entry.grid(row=1, column=1, sticky='w', pady=5)
+
+        apply_button = ttk.Button(frame, text="Alkalmaz", command=self.apply_settings)
+        apply_button.grid(row=2, column=0, columnspan=2, pady=12)
+
+    def apply_settings(self):
+        try:
+            new_len = int(self.history_len_var.get())
+            if new_len < 1:
+                raise ValueError
+            self.history_len = new_len
+            messagebox.showinfo("Siker!", f"A történeti időtartam sikeresen {new_len} másodpercre lett beállítva.")
+
+        except ValueError:
+            messagebox.showerror("Hiba!", "Kérem, érvényes pozitív egész számot adjon meg a történeti időtartamhoz!")
