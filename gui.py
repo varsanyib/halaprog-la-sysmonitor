@@ -9,29 +9,31 @@ class SysMonitorGUI:
     def __init__(self, root, monitor):
         self.root = root
         self.monitor = monitor
-        self.history_len = 30
 
-        root.title("SysMonitor Dashboard")
-        root.geometry("1280x720")
-
-        notebook = ttk.Notebook(root)
-        notebook.pack(fill="both", expand=True)
-
-        dashboard_tab = ttk.Frame(notebook)
-        notebook.add(dashboard_tab, text="📊 Monitor")
-
-        settings_tab = ttk.Frame(notebook)
-        notebook.add(settings_tab, text="⚙️ Beállítások")
-
-        self._create_settings_tab(settings_tab)
+        # Default historic data length
+        self.history_len = 30 
         
+        # Historic data lists
         self.cpu_history = []
         self.mem_history = []
         self.net_upload_history = []
         self.net_download_history = []
-        self.time_history = []
+        
+        self._configure_root(root)
+        
+        self._configure_styles()
+        
+        self._create_widgets()
 
-        # Style configurations
+        self.update_data()
+
+
+    def _configure_root(self, root):
+        root.title("SysMonitor Dashboard")
+        root.geometry("1280x720")
+
+
+    def _configure_styles(self):
         style = ttk.Style()
         style.theme_use("clam") 
         style.configure("TLabel", font=("Segoe UI", 10))
@@ -39,50 +41,75 @@ class SysMonitorGUI:
         style.configure("Value.TLabel", font=("Segoe UI", 10, "bold"), foreground="#333333")
         style.configure("Treeview.Heading", font=("Segoe UI", 10, "bold"), background="#EEEEEE")
         style.configure("Treeview", font=("Segoe UI", 9))
+
+
+    def _create_widgets(self):
+        notebook = ttk.Notebook(self.root)
+        notebook.pack(fill="both", expand=True)
+
+        dashboard_tab = ttk.Frame(notebook)
+        settings_tab = ttk.Frame(notebook)
         
-        # Main container frame
-        main_frame = ttk.Frame(dashboard_tab, padding="15", relief="groove")
+        notebook.add(dashboard_tab, text="📊 Monitor")
+        notebook.add(settings_tab, text="⚙️ Beállítások")
+
+        self._create_settings_tab(settings_tab)
+        self._create_dashboard_tab(dashboard_tab)
+
+
+    def _create_dashboard_tab(self, parent):
+        main_frame = ttk.Frame(parent, padding="15", relief="groove")
         main_frame.pack(fill='both', expand=True)
 
-        # 1. Statistics (Top section)
-        stats_frame = ttk.Frame(main_frame)
+        main_frame.grid_rowconfigure(0, weight=1) 
+        main_frame.grid_rowconfigure(1, weight=1) 
+        main_frame.grid_columnconfigure(0, weight=1) 
+
+        stats_frame = self._create_statistics_section(main_frame)
         stats_frame.grid(row=0, column=0, sticky='nsew')
+        
+
+        graphs_frame = self._create_graphs_section(main_frame)
+        graphs_frame.grid(row=1, column=0, sticky='nsew')
+        
+
+    def _create_statistics_section(self, parent):
+        """Létrehozza és elrendezni a statisztikai és hálózati táblázat részt."""
+        stats_frame = ttk.Frame(parent)
         
         ttk.Label(stats_frame, text="💻 Általános Rendszer Statisztikák", style="Header.TLabel").grid(row=0, column=0, columnspan=2, sticky='w', pady=(0, 10))
         
         self.general_labels = {}
         
+        # CPU, memory, storage
         self._create_general_data_widgets(stats_frame, "CPU:", 1, "cpu")
         self._create_general_data_widgets(stats_frame, "Memória:", 2, "memory")
         self._create_general_data_widgets(stats_frame, "Tárhely:", 3, "partitions")
 
         ttk.Separator(stats_frame, orient='horizontal').grid(row=4, column=0, columnspan=2, sticky='ew', pady=10)
 
+        # Hálózati Treeview
         ttk.Label(stats_frame, text="🌐 Hálózati Forgalom (Mbit/s)", style="Header.TLabel").grid(row=5, column=0, columnspan=2, sticky='w', pady=(10, 5))
         self.tree = self._create_network_treeview(stats_frame, 6)
         
-        # Configure stats_frame layout
         stats_frame.grid_rowconfigure(6, weight=1)
         stats_frame.grid_columnconfigure(1, weight=1) 
-
+        
         ttk.Label(stats_frame, text="📊 Grafikonok", style="Header.TLabel").grid(row=7, column=0, columnspan=2, sticky='w', pady=(10, 5))
 
-        graphs_frame = ttk.Frame(main_frame, padding="10", relief="sunken")
-        graphs_frame.grid(row=1, column=0, sticky='nsew')
-        
-        # Configure main_frame grid for expansion
-        main_frame.grid_rowconfigure(0, weight=1) 
-        main_frame.grid_rowconfigure(1, weight=1) 
-        main_frame.grid_columnconfigure(0, weight=1) 
-        
-        # Create Matplotlib figure and embed it into Tkinter
-        self.fig, self.axes = self._create_graphs(graphs_frame)
+        return stats_frame
+
+
+    def _create_graphs_section(self, parent):
+        """Létrehozza a Matplotlib grafikonokat befogadó részt."""
+        graphs_frame = ttk.Frame(parent, padding="10", relief="sunken")
+
+        self.fig, self.axes = self._setup_graphs()
         self.canvas = FigureCanvasTkAgg(self.fig, master=graphs_frame)
         self.canvas_widget = self.canvas.get_tk_widget()
         self.canvas_widget.pack(fill=tk.BOTH, expand=True)
         
-        # Start automatic update cycle
-        self.update_data()
+        return graphs_frame
 
 
     def _create_general_data_widgets(self, parent, label_text, row, key):
@@ -116,132 +143,166 @@ class SysMonitorGUI:
         return tree
 
     
-    def _create_graphs(self, parent):
+    def _setup_graphs(self):
         fig = Figure(figsize=(10, 4), dpi=100)
         axs = [fig.add_subplot(1, 3, i+1) for i in range(3)] 
         
         fig.subplots_adjust(wspace=0.3, left=0.05, right=0.98, top=0.9, bottom=0.15)
         
-        axs[0].set_title('CPU használat (%)', fontsize=9)
-        axs[0].set_ylim(0, 100)
-        axs[0].set_yticks([0, 25, 50, 75, 100])
-        axs[0].tick_params(axis='both', which='major', labelsize=8)
+        titles = ['CPU használat (%)', 'Memória használat (%)', 'Hálózati forgalom (Mbit/s)']
         
-        axs[1].set_title('Memória használat (%)', fontsize=9)
-        axs[1].set_ylim(0, 100)
-        axs[1].set_yticks([0, 25, 50, 75, 100])
-        axs[1].tick_params(axis='both', which='major', labelsize=8)
-
-        axs[2].set_title('Hálózati forgalom (Mbit/s)', fontsize=9)
-        axs[2].tick_params(axis='both', which='major', labelsize=8)
+        for i, ax in enumerate(axs):
+            ax.set_title(titles[i], fontsize=9)
+            ax.tick_params(axis='both', which='major', labelsize=8)
+            ax.set_ylim(0, 100)
+            ax.set_yticks([0, 25, 50, 75, 100])
+        
         axs[2].set_ylim(bottom=0)
 
         return fig, axs
 
+    
     def update_data(self):
-        if self.monitor.data:
-            latest_entry = self.monitor.data[-1]
-            data = latest_entry['data']
-            
-            self.cpu_history.append(data['cpu_usage_percent'])
-            self.mem_history.append(data['memory_percent'])
-            
-            # Calculate total network traffic for the graph
-            total_upload = sum(s['upload_mbps'] for s in data.get('network_stats', []))
-            total_download = sum(s['download_mbps'] for s in data.get('network_stats', []))
-            self.net_upload_history.append(total_upload)
-            self.net_download_history.append(total_download)
-            
-            self.time_history.append(len(self.time_history))
-            
-            start_index = max(0, len(self.cpu_history) - self.history_len)
-            
-            cpu_data = self.cpu_history[start_index:]
-            mem_data = self.mem_history[start_index:]
-            upload_data = self.net_upload_history[start_index:]
-            download_data = self.net_download_history[start_index:]
-            
-            # The X-axis data should be relative indices for the displayed window
-            x_data = list(range(len(cpu_data))) 
-            
-            self.general_labels['cpu'].config(text=f"{data['cpu_usage_percent']:.1f}% @ {data['cpu_freq_current_mhz']} MHz - ({', '.join(f'{core}%' for core in data['cpu_usage_per_core_percent'])})")
-            
-            # Memory data formatting
-            mem_text = f"{data['memory_used_gb']:.2f} GB / {data['memory_total_gb']:.2f} GB ({data['memory_percent']:.1f}%)"
-            self.general_labels['memory'].config(text=mem_text)
+        """A fő frissítési ciklus. Elindítja az almetódusokat és beütemezi a következő frissítést."""
+        if not self.monitor.data:
+            self.root.after(1000, self.update_data)
+            return
 
-            partitions_info = []
-            for part in data.get('disk_usages', []):
-                usage = part['usage']
-                partitions_info.append(f"{part['mountpoint']} {usage['used'] / (1024 ** 3):.2f} GB / {usage['total'] / (1024 ** 3):.2f} GB ({usage['percent']}%)")
-
-            self.general_labels['partitions'].config(text="; ".join(partitions_info))
+        latest_entry = self.monitor.data[-1]
+        data = latest_entry['data']
             
-            
-            # 1. Sort the network stats list by the 'interface' key
-            network_stats = data.get('network_stats', [])
-            sorted_stats = sorted(network_stats, key=lambda x: x['interface']) 
-            
-            # 2. Clear previous entries
-            for item in self.tree.get_children():
-                self.tree.delete(item)
-
-            # 3. Insert new sorted data rows
-            for stats in sorted_stats:
-                self.tree.insert("", "end", values=(
-                    stats['interface'],
-                    f"{stats['upload_mbps']:.4f}",
-                    f"{stats['download_mbps']:.4f}",
-                    stats['errors_in'],
-                    stats['errors_out'],
-                    stats['dropped_in'],
-                    stats['dropped_out']
-                ))
-            
-            for ax in self.axes:
-                ax.clear()
+        cpu_data, mem_data, upload_data, download_data, x_data = self._process_historical_data(data)
         
-            self.axes[0].plot(x_data, cpu_data, color='blue')
-            self.axes[0].set_ylim(0, 100)
-            self.axes[0].set_title('CPU használat (%)', fontsize=9)
-            
-            self.axes[1].plot(x_data, mem_data, color='green')
-            self.axes[1].set_ylim(0, 100)
-            self.axes[1].set_title('Memória használat (%)', fontsize=9)
+        self._update_general_stats(data)
 
-            self.axes[2].plot(x_data, upload_data, label='Feltöltés', color='orange')
-            self.axes[2].plot(x_data, download_data, label='Letöltés', color='purple')
-            self.axes[2].legend(loc='upper left', fontsize=7)
-            self.axes[2].set_title('Hálózati forgalom (Mbit/s)', fontsize=9)
-            self.axes[2].set_ylim(bottom=0)
+        self._update_network_treeview(data)
+        
+        self._update_graphs(cpu_data, mem_data, upload_data, download_data, x_data)
 
-            # All axes
-            current_history_length = len(x_data)
-            for ax in self.axes:
-                ax.set_xticks([x_data[0], x_data[-1]])
-                if len(self.monitor.data) > self.history_len:
-                    # diff hh:mm:ss current_history_length value (sec)
-                    time_now = time.time()
-                    time_diff = time_now - current_history_length
-                    time_diff_string = time.strftime('%H:%M:%S', time.gmtime(time_diff))
-                else:
-                    time_diff_string = f"-{time.strftime('%H:%M:%S', time.gmtime(current_history_length))}"
-                ax.set_xticklabels([f'{time_diff_string}', 'Most'])
-                ax.grid(True, linestyle=':', alpha=0.6)
-                 
-            # Redraw the canvas
-            self.canvas.draw()
-
-        # Schedule the next update (1 second interval)
         self.root.after(1000, self.update_data)
 
+
+    def _process_historical_data(self, data):
+        self.cpu_history.append(data['cpu_usage_percent'])
+        self.mem_history.append(data['memory_percent'])
+            
+        total_upload = sum(s['upload_mbps'] for s in data.get('network_stats', []))
+        total_download = sum(s['download_mbps'] for s in data.get('network_stats', []))
+        self.net_upload_history.append(total_upload)
+        self.net_download_history.append(total_download)
+        
+        start_index = max(0, len(self.cpu_history) - self.history_len)
+            
+        cpu_data = self.cpu_history[start_index:]
+        mem_data = self.mem_history[start_index:]
+        upload_data = self.net_upload_history[start_index:]
+        download_data = self.net_download_history[start_index:]
+            
+        x_data = list(range(len(cpu_data))) 
+        
+        return cpu_data, mem_data, upload_data, download_data, x_data
+
+
+    def _update_general_stats(self, data):
+        # CPU
+        cpu_cores_text = ', '.join(f'{core:.1f}%' for core in data['cpu_usage_per_core_percent'])
+        cpu_text = f"{data['cpu_usage_percent']:.1f}% @ {data['cpu_freq_current_mhz']} MHz - ({cpu_cores_text})"
+        self.general_labels['cpu'].config(text=cpu_text)
+            
+        # Memory
+        mem_text = f"{data['memory_used_gb']:.2f} GB / {data['memory_total_gb']:.2f} GB ({data['memory_percent']:.1f}%)"
+        self.general_labels['memory'].config(text=mem_text)
+
+        # Storage
+        partitions_info = []
+        for part in data.get('disk_usages', []):
+            usage = part['usage']
+            used_gb = usage['used'] / (1024 ** 3)
+            total_gb = usage['total'] / (1024 ** 3)
+            partitions_info.append(f"{part['mountpoint']} {used_gb:.2f} GB / {total_gb:.2f} GB ({usage['percent']}%)")
+
+        self.general_labels['partitions'].config(text="; ".join(partitions_info))
+
+
+    def _update_network_treeview(self, data):
+        network_stats = data.get('network_stats', [])
+        # Sort by network adapter name
+        sorted_stats = sorted(network_stats, key=lambda x: x['interface']) 
+            
+        # Clear previous entries
+        for item in self.tree.get_children():
+            self.tree.delete(item)
+
+        # Insert new, sorted data
+        for stats in sorted_stats:
+            self.tree.insert("", "end", values=(
+                stats['interface'],
+                f"{stats['upload_mbps']:.4f}",
+                f"{stats['download_mbps']:.4f}",
+                stats['errors_in'],
+                stats['errors_out'],
+                stats['dropped_in'],
+                stats['dropped_out']
+            ))
+
+    
+    def _update_graphs(self, cpu_data, mem_data, upload_data, download_data, x_data):
+        # Clear previous lines on all axes
+        for ax in self.axes:
+            ax.clear()
+        
+        # CPU graph
+        self.axes[0].plot(x_data, cpu_data, color='blue')
+        self.axes[0].set_ylim(0, 100)
+        self.axes[0].set_title('CPU használat (%)', fontsize=9)
+            
+        # Memory graph
+        self.axes[1].plot(x_data, mem_data, color='green')
+        self.axes[1].set_ylim(0, 100)
+        self.axes[1].set_title('Memória használat (%)', fontsize=9)
+
+        # Network graph
+        self.axes[2].plot(x_data, upload_data, label='Feltöltés', color='orange')
+        self.axes[2].plot(x_data, download_data, label='Letöltés', color='purple')
+        self.axes[2].legend(loc='upper left', fontsize=7)
+        self.axes[2].set_title('Hálózati forgalom (Mbit/s)', fontsize=9)
+        self.axes[2].set_ylim(bottom=0)
+        
+        # Common axis settings (Time)
+        self._configure_graph_time_axis(x_data)
+                 
+        # Redraw canvas
+        self.canvas.draw()
+
+
+    def _configure_graph_time_axis(self, x_data):
+        current_history_length = len(x_data)
+        
+        # Only the two extreme points need to be marked
+        x_ticks = [x_data[0], x_data[-1]] if x_data else []
+
+        if len(self.monitor.data) > self.history_len:
+            time_now = time.time()
+            time_diff = time_now - current_history_length
+            time_diff_string = time.strftime('%H:%M:%S', time.gmtime(time_diff))
+        else:
+            time_diff_string = f"-{time.strftime('%H:%M:%S', time.gmtime(current_history_length))}"
+        
+        x_labels = [f'{time_diff_string}', 'Most'] if x_data else []
+
+        for ax in self.axes:
+            ax.set_xticks(x_ticks)
+            ax.set_xticklabels(x_labels)
+            ax.grid(True, linestyle=':', alpha=0.6)
+
+    
     def _create_settings_tab(self, parent):
         frame = ttk.Frame(parent, padding=20)
         frame.pack(fill="both", expand=True)
 
         ttk.Label(frame, text="📌 GUI Beállítások", style="Header.TLabel").grid(row=0, column=0, sticky='w', pady=(0, 10))
 
-        ttk.Label(frame, text="Grafikon történeti időtartam:").grid(row=1, column=0, sticky='w', pady=5)
+        ttk.Label(frame, text="Grafikon történeti időtartam (mp):").grid(row=1, column=0, sticky='w', pady=5)
         self.history_len_var = tk.IntVar(value=self.history_len)
         history_entry = ttk.Entry(frame, textvariable=self.history_len_var, width=10)
         history_entry.grid(row=1, column=1, sticky='w', pady=5)
@@ -254,7 +315,13 @@ class SysMonitorGUI:
             new_len = int(self.history_len_var.get())
             if new_len < 1:
                 raise ValueError
+            
             self.history_len = new_len
+            self.cpu_history = self.cpu_history[-new_len:]
+            self.mem_history = self.mem_history[-new_len:]
+            self.net_upload_history = self.net_upload_history[-new_len:]
+            self.net_download_history = self.net_download_history[-new_len:]
+
             messagebox.showinfo("Siker!", f"A történeti időtartam sikeresen {new_len} másodpercre lett beállítva.")
 
         except ValueError:
