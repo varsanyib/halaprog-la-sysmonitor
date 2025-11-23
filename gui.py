@@ -230,7 +230,7 @@ class SysMonitorGUI:
         self.general_labels['cpu'].config(text=cpu_text)
             
         # Memory
-        mem_text = f"{data['memory_used_gb']:.2f} GB / {data['memory_total_gb']:.2f} GB ({data['memory_percent']:.1f}%)"
+        mem_text = f"{data['memory_used_gb']:.2f} GB / {data['memory_total_gb']:.2f} GB ({data['memory_used_gb'] / data['memory_total_gb'] * 100:.1f}%)"
         self.general_labels['memory'].config(text=mem_text)
 
         # Storage
