@@ -3,3 +3,4 @@ tk
 matplotlib
 scikit-learn
 numpy
+pandas
