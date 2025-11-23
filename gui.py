@@ -54,18 +54,18 @@ class SysMonitorGUI:
         
         self._create_general_data_widgets(stats_frame, "CPU:", 1, "cpu")
         self._create_general_data_widgets(stats_frame, "Memória:", 2, "memory")
+        self._create_general_data_widgets(stats_frame, "Tárhely:", 3, "partitions")
 
-        ttk.Separator(stats_frame, orient='horizontal').grid(row=3, column=0, columnspan=2, sticky='ew', pady=10)
+        ttk.Separator(stats_frame, orient='horizontal').grid(row=4, column=0, columnspan=2, sticky='ew', pady=10)
 
-        ttk.Label(stats_frame, text="🌐 Hálózati Forgalom (Mbit/s)", style="Header.TLabel").grid(row=4, column=0, columnspan=2, sticky='w', pady=(10, 5))
-
-        self.tree = self._create_network_treeview(stats_frame, 5)
+        ttk.Label(stats_frame, text="🌐 Hálózati Forgalom (Mbit/s)", style="Header.TLabel").grid(row=5, column=0, columnspan=2, sticky='w', pady=(10, 5))
+        self.tree = self._create_network_treeview(stats_frame, 6)
         
         # Configure stats_frame layout
-        stats_frame.grid_rowconfigure(5, weight=1)
+        stats_frame.grid_rowconfigure(6, weight=1)
         stats_frame.grid_columnconfigure(1, weight=1) 
 
-        ttk.Label(stats_frame, text="📊 Grafikonok", style="Header.TLabel").grid(row=6, column=0, columnspan=2, sticky='w', pady=(10, 5))
+        ttk.Label(stats_frame, text="📊 Grafikonok", style="Header.TLabel").grid(row=7, column=0, columnspan=2, sticky='w', pady=(10, 5))
 
         graphs_frame = ttk.Frame(main_frame, padding="10", relief="sunken")
         graphs_frame.grid(row=1, column=0, sticky='nsew')
@@ -164,11 +164,18 @@ class SysMonitorGUI:
             # The X-axis data should be relative indices for the displayed window
             x_data = list(range(len(cpu_data))) 
             
-            self.general_labels['cpu'].config(text=f"{data['cpu_usage_percent']:.1f}%")
+            self.general_labels['cpu'].config(text=f"{data['cpu_usage_percent']:.1f}% @ {data['cpu_freq_current_mhz']} MHz - ({', '.join(f'{core}%' for core in data['cpu_usage_per_core_percent'])})")
             
             # Memory data formatting
-            mem_text = f"Felhasznált: {data['memory_used_gb']:.2f} GB / Összes: {data['memory_total_gb']:.2f} GB ({data['memory_percent']:.1f}%)"
+            mem_text = f"{data['memory_used_gb']:.2f} GB / {data['memory_total_gb']:.2f} GB ({data['memory_percent']:.1f}%)"
             self.general_labels['memory'].config(text=mem_text)
+
+            partitions_info = []
+            for part in data.get('disk_usages', []):
+                usage = part['usage']
+                partitions_info.append(f"{part['mountpoint']} {usage['used'] / (1024 ** 3):.2f} GB / {usage['total'] / (1024 ** 3):.2f} GB ({usage['percent']}%)")
+
+            self.general_labels['partitions'].config(text="; ".join(partitions_info))
             
             
             # 1. Sort the network stats list by the 'interface' key

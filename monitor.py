@@ -10,8 +10,19 @@ class SysMonitor:
     def collect_data(self):
         try:
             cpu_usage = psutil.cpu_percent()
+            cpu_usage_cores = psutil.cpu_percent(percpu=True)
+            cpu_freq = psutil.cpu_freq()
             memory_info = psutil.virtual_memory()
             disk_info = psutil.disk_usage('/')
+            disk_usages = []
+
+            for disk in psutil.disk_partitions():
+                if disk.fstype:
+                    disk_usages.append({
+                        'mountpoint': disk.mountpoint,
+                        'fstype': disk.fstype,
+                        'usage': psutil.disk_usage(disk.mountpoint)._asdict()
+                    })
 
             net_now = psutil.net_io_counters(pernic=True)
             time.sleep(1)
@@ -42,12 +53,15 @@ class SysMonitor:
 
             return {
                 'cpu_usage_percent': round(cpu_usage, 2),
+                'cpu_usage_per_core_percent': [round(core, 2) for core in cpu_usage_cores],
+                'cpu_freq_current_mhz': round(cpu_freq.current),
                 'memory_total_gb': round(memory_info.total / (1024 ** 3), 4),
                 'memory_used_gb': round(memory_info.used / (1024 ** 3), 4),
                 'memory_percent': round(memory_info.percent, 2),
                 'disk_total_gb': round(disk_info.total / (1024 ** 3), 4),
                 'disk_used_gb': round(disk_info.used / (1024 ** 3), 4),
                 'disk_percent': round(disk_info.percent, 2),
+                'disk_usages': disk_usages,
                 'network_stats': net_stats
             }
         except Exception as e:

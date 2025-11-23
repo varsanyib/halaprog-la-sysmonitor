@@ -3,6 +3,7 @@ import time
 from monitor import SysMonitor
 from gui import SysMonitorGUI
 import tkinter as tk
+import psutil
 
 monitor = SysMonitor(run_interval=1)
 monitor_thread = threading.Thread(target=monitor.run, daemon=True)
