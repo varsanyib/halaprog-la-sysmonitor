@@ -1,3 +1,5 @@
 psutil
 tk
 matplotlib
+scikit-learn
+numpy
